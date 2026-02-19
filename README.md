@@ -1,3 +1,5 @@
+使用 code agent 制作。
+
 # 有道词典爬虫 - 同步版本
 
 这是一个简单的Python爬虫，用于从有道词典（dict.youdao.com）抓取英文单词的翻译。
