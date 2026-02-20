@@ -52,7 +52,7 @@ def fetch_basic_translation(word: str) -> str:
 
     headers = {
         "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
-                      "(KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+        "(KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
         "Accept-Language": "en-US,en;q=0.5",
         "Accept-Encoding": "gzip, deflate, br",
@@ -66,18 +66,18 @@ def fetch_basic_translation(word: str) -> str:
         if response.status_code != 200:
             return f"错误：HTTP状态码 {response.status_code}"
 
-        soup = BeautifulSoup(response.text, 'lxml')
+        soup = BeautifulSoup(response.text, "lxml")
 
         # 查找基本翻译容器
-        results_contents = soup.find('div', id='results-contents')
+        results_contents = soup.find("div", id="results-contents")
         if not results_contents:
             return "错误：未找到翻译区域（可能单词不存在或页面结构已更改）"
 
-        trans_container = results_contents.find('div', class_='trans-container')
+        trans_container = results_contents.find("div", class_="trans-container")
         if not trans_container:
             return "错误：未找到翻译容器"
 
-        translation_items = trans_container.find_all('li')
+        translation_items = trans_container.find_all("li")
         if not translation_items:
             return "错误：未找到翻译内容"
 
@@ -103,13 +103,13 @@ def fetch_basic_translation(word: str) -> str:
 
 def fetch_collins_translation(word: str) -> str:
     """
-    从有道词典获取单词的柯林斯英汉双解大词典翻译（包含例句）。
+    从有道词典获取单词的柯林斯英汉双解大词典翻译（包含英英释义和例句）。
 
     参数:
         word (str): 要查询的英文单词
 
     返回:
-        str: 柯林斯翻译文本（包含例句），如果没有则返回空字符串
+        str: 柯林斯翻译文本（包含英英释义和例句），如果没有则返回空字符串
 
     C/Rust类比：
     - C: char* fetch_collins_translation(const char* word);
@@ -119,7 +119,7 @@ def fetch_collins_translation(word: str) -> str:
     url = f"https://dict.youdao.com/search?q={word}"
     headers = {
         "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
-                      "(KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+        "(KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
     }
 
     try:
@@ -128,110 +128,151 @@ def fetch_collins_translation(word: str) -> str:
         if response.status_code != 200:
             return ""
 
-        soup = BeautifulSoup(response.text, 'lxml')
+        soup = BeautifulSoup(response.text, "lxml")
 
         # 查找柯林斯词典容器
-        collins_result = soup.find('div', id='collinsResult')
+        collins_result = soup.find("div", id="collinsResult")
         if not collins_result:
             return ""
 
         # 查找柯林斯主要翻译块
-        major_trans = collins_result.find_all('div', class_='collinsMajorTrans')
+        major_trans = collins_result.find_all("div", class_="collinsMajorTrans")
         if not major_trans:
             return ""
 
-        # 提取柯林斯翻译内容（包含例句）
+        # 提取柯林斯翻译内容（包含英英释义和例句）
         collins_translations = []
         for i, trans in enumerate(major_trans, 1):
             # 获取翻译内容
-            trans_content = trans.find('p')
+            trans_content = trans.find("p")
             if trans_content:
-                # 提取英文和中文部分
-                english_parts = []
-                chinese_parts = []
+                # 提取完整的释义文本
+                full_definition = ""
+                pos_tag = ""  # 词性标注
+                additional_info = []  # 额外信息（如[套语]）
 
-                # 遍历所有子元素，分离英文和中文
+                # 遍历所有子元素，构建完整的释义
                 for child in trans_content.children:
-                    if hasattr(child, 'name'):
+                    # 检查是否是真正的HTML元素（而不是文本节点）
+                    if hasattr(child, "name") and child.name:
                         # HTML标签
-                        if child.name == 'span':
-                            # 词性标签或其他span
+                        if child.name == "span":
                             text = child.get_text(strip=True)
                             if text:
-                                # 检查span是否有class="additional"属性
-                                # 如果有，说明是注释（如[套语]），应该与英文一起显示
-                                if child.get('class') == ['additional']:
-                                    # 注释，添加到英文部分
-                                    english_parts.append(text)
-                                # 检查span内容是否包含中文字符
-                                elif any('\u4e00' <= c <= '\u9fff' for c in text):
-                                    chinese_parts.append(text)
+                                # 检查span类型
+                                if child.get("class") == ["additional"]:
+                                    # 额外信息（如[套语]），可能是词性也可能是注释
+                                    # 检查是否是英文词性标注
+                                    if text.isupper() and text.isalpha():
+                                        # 大写英文，可能是词性
+                                        if not pos_tag:
+                                            pos_tag = text
+                                    else:
+                                        # 其他是额外信息（如[套语]）
+                                        additional_info.append(text)
+                                elif child.get("class") == ["collinsOrder"]:
+                                    # 序号，跳过
+                                    continue
+                                elif any("\u4e00" <= c <= "\u9fff" for c in text):
+                                    # 中文字符，通常是中文翻译
+                                    full_definition += text + " "
                                 else:
-                                    english_parts.append(text)
-                        elif child.name == 'b':
+                                    # 英文词性标注等
+                                    if not pos_tag:
+                                        pos_tag = text
+                                    full_definition += text + " "
+                        elif child.name == "b":
                             # 单词标签
                             text = child.get_text(strip=True)
                             if text:
-                                # 检查b标签内容是否包含中文字符
-                                if any('\u4e00' <= c <= '\u9fff' for c in text):
-                                    chinese_parts.append(text)
-                                else:
-                                    english_parts.append(text)
+                                full_definition += f"{text} "
                     else:
-                        # 文本节点
+                        # 文本节点 - 包含英英释义和中文翻译
                         text = str(child).strip()
                         if text:
-                            # 检查是否包含中文字符
-                            if any('\u4e00' <= c <= '\u9fff' for c in text):
-                                # 包含中文，需要分离英文和中文
-                                # 找到第一个中文字符的位置
-                                for idx, char in enumerate(text):
-                                    if '\u4e00' <= char <= '\u9fff':
-                                        # 分离英文和中文部分
-                                        english_part = text[:idx].strip()
-                                        chinese_part = text[idx:].strip()
-                                        if english_part:
-                                            english_parts.append(english_part)
-                                        if chinese_part:
-                                            chinese_parts.append(chinese_part)
-                                        break
-                            else:
-                                # 纯英文，添加到英文部分
-                                english_parts.append(text)
+                            full_definition += text + " "
 
-                # 合并英文和中文
-                english_text = ' '.join(english_parts).strip()
-                chinese_text = ' '.join(chinese_parts).strip()
+                # 清理和格式化完整定义
+                full_definition = " ".join(full_definition.split())
 
-                if english_text or chinese_text:
-                    # 添加序号和英文翻译
-                    collins_translations.append(f"{i}. {english_text}")
+                if full_definition:
+                    # 构建输出格式：词性 + 英英释义 + 中文翻译
+                    output_parts = []
+                    if pos_tag:
+                        output_parts.append(pos_tag)
+
+                    # 分离英文释义和中文翻译
+                    english_definition = ""
+                    chinese_translation = ""
+
+                    # 查找中文字符的位置
+                    chinese_start = -1
+                    for idx, char in enumerate(full_definition):
+                        if "\u4e00" <= char <= "\u9fff":
+                            chinese_start = idx
+                            break
+
+                    if chinese_start != -1:
+                        # 找到中文字符，分离英文和中文
+                        english_definition = full_definition[:chinese_start].strip()
+                        chinese_translation = full_definition[chinese_start:].strip()
+
+                        # 去除英文定义末尾的标点符号
+                        english_definition = english_definition.rstrip(".,;：")
+                    else:
+                        # 纯英文
+                        english_definition = full_definition
+
+                    # 添加序号和完整内容
+                    definition_line = f"{i}. "
+                    if pos_tag:
+                        definition_line += f"{pos_tag} "
+                    definition_line += english_definition
+
+                    collins_translations.append(definition_line)
+
                     # 添加中文翻译（如果有）
-                    if chinese_text:
-                        collins_translations.append(f"   {chinese_text}")
+                    if chinese_translation:
+                        collins_translations.append(f"   {chinese_translation}")
+
+                    # 添加额外信息（如[套语]）
+                    if additional_info:
+                        collins_translations.append(f"   {' '.join(additional_info)}")
 
                     # 查找对应的例句
-                    parent_li = trans.find_parent('li')
+                    parent_li = trans.find_parent("li")
                     if parent_li:
-                        example_lists = parent_li.find_all('div', class_='exampleLists')
+                        example_lists = parent_li.find_all("div", class_="exampleLists")
                         for example_list in example_lists:
-                            examples = example_list.find_all('div', class_='examples')
+                            examples = example_list.find_all("div", class_="examples")
                             for example in examples:
                                 # 查找例句中的所有<p>标签
-                                example_paragraphs = example.find_all('p')
+                                example_paragraphs = example.find_all("p")
                                 if len(example_paragraphs) >= 2:
                                     # 第一个<p>是英文，第二个<p>是中文
-                                    english_example = example_paragraphs[0].get_text(strip=True)
-                                    chinese_example = example_paragraphs[1].get_text(strip=True)
+                                    english_example = example_paragraphs[0].get_text(
+                                        strip=True
+                                    )
+                                    chinese_example = example_paragraphs[1].get_text(
+                                        strip=True
+                                    )
                                     if english_example:
-                                        collins_translations.append(f"    例：{english_example}")
+                                        collins_translations.append(
+                                            f"    例：{english_example}"
+                                        )
                                     if chinese_example:
-                                        collins_translations.append(f"       {chinese_example}")
+                                        collins_translations.append(
+                                            f"       {chinese_example}"
+                                        )
                                 elif len(example_paragraphs) == 1:
                                     # 只有一个<p>，可能是英文或中文
-                                    example_text = example_paragraphs[0].get_text(strip=True)
+                                    example_text = example_paragraphs[0].get_text(
+                                        strip=True
+                                    )
                                     if example_text:
-                                        collins_translations.append(f"    例：{example_text}")
+                                        collins_translations.append(
+                                            f"    例：{example_text}"
+                                        )
 
         if not collins_translations:
             return ""
@@ -284,7 +325,7 @@ def fetch_translation(word: str) -> str:
                 continue
 
             # 检查是否是序号开头（如 1., 2., 3.）
-            if line[0].isdigit() and line[1] == '.':
+            if line[0].isdigit() and line[1] == ".":
                 # 序号行：第一个不添加空行，后续添加空行分隔
                 if not first_entry:
                     result.append("")
@@ -295,7 +336,7 @@ def fetch_translation(word: str) -> str:
                 # 例句格式：英文在前，中文在后
                 result.append(f"    {line}")
             # 检查是否是中文翻译（以空格开头）
-            elif line.startswith(' '):
+            elif line.startswith(" "):
                 # 中文翻译：保持原有缩进
                 result.append(f"    {line}")
             else:
@@ -314,7 +355,12 @@ def fetch_translation(word: str) -> str:
     for line in basic_lines:
         if line.strip():
             # 检查是否以词性开头（如 int., n., v.）
-            if line.startswith("int.") or line.startswith("n.") or line.startswith("v.") or line.startswith("adj."):
+            if (
+                line.startswith("int.")
+                or line.startswith("n.")
+                or line.startswith("v.")
+                or line.startswith("adj.")
+            ):
                 result.append(f"  {line}")
             else:
                 result.append(f"    {line}")
@@ -339,7 +385,7 @@ def fetch_translation_xpath(word: str) -> str:
     url = f"https://dict.youdao.com/search?q={word}"
     headers = {
         "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
-                      "(KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+        "(KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
     }
 
     try:
@@ -348,7 +394,7 @@ def fetch_translation_xpath(word: str) -> str:
         if response.status_code != 200:
             return f"错误：HTTP状态码 {response.status_code}"
 
-        soup = BeautifulSoup(response.text, 'lxml')
+        soup = BeautifulSoup(response.text, "lxml")
 
         # 使用 CSS 选择器（lxml 支持）
         # 这比 find/find_all 更简洁
@@ -362,7 +408,11 @@ def fetch_translation_xpath(word: str) -> str:
         # 使用列表推导式提取文本
         # 类比C: 需要循环遍历
         # 类比Rust: translation_items.iter().map(|item| item.text().trim()).collect()
-        translations = [item.get_text(strip=True) for item in translation_items if item.get_text(strip=True)]
+        translations = [
+            item.get_text(strip=True)
+            for item in translation_items
+            if item.get_text(strip=True)
+        ]
 
         if not translations:
             return "错误：提取到的翻译内容为空"
